@@ -3,7 +3,7 @@ import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
 class ApiService {
-  static const String _baseUrl = "http://192.168.0.106:3000/api/auth"; 
+  static const String _baseUrl = "https://clearview-backend.onrender.com/api/auth";
 
   static Future<Map<String, dynamic>?> loginUser(String email, String password) async {
     try {
