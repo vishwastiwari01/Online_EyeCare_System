@@ -8,6 +8,7 @@ const pool = mysql.createPool({
     user: process.env.DB_USER,
     password: process.env.DB_PASS,
     database: process.env.DB_NAME,
+    port: process.env.DB_PORT, // <-- This line is added for the TiDB port
     waitForConnections: true, // If true, pool will queue requests when no connection is available
     connectionLimit: 10, // Max number of connections in the pool
     queueLimit: 0 // Unlimited queueing for connections
