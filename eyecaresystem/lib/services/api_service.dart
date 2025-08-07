@@ -3,11 +3,12 @@ import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
 class ApiService {
-  // IMPORTANT: Make sure this is your deployed backend URL
-  static const String _baseUrl = "https://clearview-backend.onrender.com/api";
+  // IMPORTANT: This base URL should end in /api to work with all endpoints.
+  static const String _baseUrl = "https://clearview-backend.onrender.com/api"; 
 
   static Future<Map<String, dynamic>?> loginUser(String email, String password) async {
     try {
+      // Constructs the full URL: .../api/auth/login
       final response = await http.post(
         Uri.parse('$_baseUrl/auth/login'),
         headers: {'Content-Type': 'application/json'},
@@ -30,6 +31,7 @@ class ApiService {
 
   static Future<bool> registerUser(String name, String email, String password) async {
     try {
+      // Constructs the full URL: .../api/auth/register
       final response = await http.post(
         Uri.parse('$_baseUrl/auth/register'),
         headers: {'Content-Type': 'application/json'},
@@ -48,6 +50,7 @@ class ApiService {
     if (token == null) return false;
 
     try {
+      // Constructs the full URL: .../api/results
       final response = await http.post(
         Uri.parse('$_baseUrl/results'),
         headers: {
@@ -69,6 +72,7 @@ class ApiService {
     if (token == null) return [];
 
     try {
+      // Constructs the full URL: .../api/results
       final response = await http.get(
         Uri.parse('$_baseUrl/results'),
         headers: {
