@@ -47,7 +47,7 @@ class HomeScreen extends StatelessWidget {
                     color: Colors.blue,
                     onTap: () => Navigator.pushNamed(context, '/dashboard'),
                   ),
-                   const SizedBox(height: 30),
+                  const SizedBox(height: 30),
                 ],
               ),
             ),

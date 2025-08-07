@@ -16,9 +16,6 @@ enum TestPhase {
   finished,
 }
 
-// Enum for the final diagnosed condition
-enum EyeCondition { myopia, hypermetropia, astigmatism, presbyopia, normal }
-
 class EyeTestScreen extends StatefulWidget {
   final List<CameraDescription> cameras;
   const EyeTestScreen({super.key, required this.cameras});
@@ -122,8 +119,8 @@ class _EyeTestScreenState extends State<EyeTestScreen> {
       _moveToNextPhase();
   }
 
-  void _processAstigmatismPower(bool clearer) {
-      _astigmatismPower += clearer ? -0.25 : 0.25;
+  void _processAstigmatismPower(bool horizontalIsClearer) {
+      _astigmatismPower += horizontalIsClearer ? -0.25 : 0.25;
       if(_astigmatismPower.abs() > 4.0) { // Limit the power
         _finalizeAstigmatismPower();
       } else {
@@ -374,7 +371,14 @@ class _EyeTestScreenState extends State<EyeTestScreen> {
       children: [
         Text("Testing ${_testingLeftEye ? 'Left' : 'Right'} Eye: Astigmatism Axis", style: GoogleFonts.poppins(fontSize: 18, color: Colors.grey.shade700)),
         const SizedBox(height: 20),
-        Text("Which set of lines appears sharpest and darkest?", style: GoogleFonts.poppins(fontSize: 20, textAlign: TextAlign.center)),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 20.0),
+          child: Text(
+            "Which set of lines appears sharpest and darkest?",
+            textAlign: TextAlign.center,
+            style: GoogleFonts.poppins(fontSize: 20),
+          ),
+        ),
         const SizedBox(height: 20),
         Expanded(
           child: Center(
@@ -410,7 +414,14 @@ class _EyeTestScreenState extends State<EyeTestScreen> {
       children: [
         Text("Testing ${_testingLeftEye ? 'Left' : 'Right'} Eye: Astigmatism Power", style: GoogleFonts.poppins(fontSize: 18, color: Colors.grey.shade700)),
         const SizedBox(height: 20),
-        Text("Do the lines in the two blocks appear equally sharp?", style: GoogleFonts.poppins(fontSize: 20, textAlign: TextAlign.center)),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 20.0),
+          child: Text(
+            "Do the lines in the two blocks appear equally sharp?",
+            textAlign: TextAlign.center,
+            style: GoogleFonts.poppins(fontSize: 20),
+          ),
+        ),
         const SizedBox(height: 20),
         Expanded(
           child: Center(

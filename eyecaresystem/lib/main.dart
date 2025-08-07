@@ -44,6 +44,7 @@ class MyApp extends StatelessWidget {
         '/signup': (context) => const SignupScreen(),
         '/home': (context) => const HomeScreen(),
         '/dashboard': (context) => const DashboardScreen(),
+        // This is the corrected line that passes the camera list
         '/eye_test': (context) => EyeTestScreen(cameras: cameras),
       },
     );
