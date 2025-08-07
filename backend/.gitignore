@@ -1,5 +1,13 @@
+<<<<<<< HEAD
 # Dependencies
 /node_modules
 
 # Environment variables
 .env
+=======
+# Dependencies
+/node_modules
+
+# Environment variables
+.env
+>>>>>>> 2f4ee8173967f8a62ead00c43fd3260c31fd7f47
