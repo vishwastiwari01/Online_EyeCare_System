@@ -1,5 +1,6 @@
-// db.js
 const mysql = require('mysql2');
+const fs = require('fs');
+const path = require('path');
 require('dotenv').config();
 
 // Create a connection pool instead of a single connection
@@ -8,30 +9,24 @@ const pool = mysql.createPool({
     user: process.env.DB_USER,
     password: process.env.DB_PASS,
     database: process.env.DB_NAME,
-    port: process.env.DB_PORT, // <-- This line is added for the TiDB port
-    waitForConnections: true, // If true, pool will queue requests when no connection is available
-    connectionLimit: 10, // Max number of connections in the pool
-    queueLimit: 0 // Unlimited queueing for connections
+    port: process.env.DB_PORT,
+    ssl: {
+        // Corrected to use your actual certificate file name
+        ca: fs.readFileSync(path.join(__dirname, 'isrgrootx1.pem'))
+    },
+    waitForConnections: true,
+    connectionLimit: 10,
+    queueLimit: 0
 });
 
-// Test the connection pool (optional, but good for initial setup)
+// Test the connection pool
 pool.getConnection((err, connection) => {
     if (err) {
         console.error('❌ Error connecting to database pool:', err);
-        // Depending on the error, you might want to exit the process or retry
-        if (err.code === 'PROTOCOL_CONNECTION_LOST') {
-            console.error('Database connection was closed.');
-        } else if (err.code === 'ER_CON_COUNT_ERROR') {
-            console.error('Database has too many connections.');
-        } else if (err.code === 'ECONNREFUSED') {
-            console.error('Database connection refused. Check host, port, and firewall.');
-        } else {
-            console.error('Unhandled database connection error:', err.code);
-        }
-        return; // Don't throw, just log
+        return;
     }
     console.log("✅ MySQL Pool Connected");
-    connection.release(); // Release the connection back to the pool
+    connection.release();
 });
 
-module.exports = pool; // Export the pool instead of the single connection
+module.exports = pool;
