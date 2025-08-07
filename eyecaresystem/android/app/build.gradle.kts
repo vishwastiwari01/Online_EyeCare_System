@@ -8,7 +8,7 @@ plugins {
 android {
     namespace = "com.example.eyecaresystem"
     compileSdk = flutter.compileSdkVersion
-    ndkVersion = flutter.ndkVersion
+    ndkVersion = "27.0.12077973" // <-- This line is updated
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_11

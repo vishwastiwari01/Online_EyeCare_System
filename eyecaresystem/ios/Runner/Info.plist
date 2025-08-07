@@ -2,6 +2,22 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- ... existing keys ... -->
+
+    <!-- Required for camera access -->
+    <key>NSCameraUsageDescription</key>
+    <string>This app needs camera access to help you position yourself for the eye test.</string>
+    <!-- Required for face detection (ML Kit) -->
+    <key>NSFaceIDUsageDescription</key>
+    <string>This app uses face detection to help with distance calibration for the eye test.</string>
+
+    <!-- ... rest of your dict ... -->
+</dict>
+</plist>
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>

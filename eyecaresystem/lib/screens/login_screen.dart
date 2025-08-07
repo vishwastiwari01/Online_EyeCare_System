@@ -51,7 +51,7 @@ class _LoginScreenState extends State<LoginScreen> {
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center, // Center content vertically
               children: [
-                Text("ClearView Login",
+                const Text("ClearView Login",
                     style: TextStyle(fontSize: 32, fontWeight: FontWeight.bold)),
                 const SizedBox(height: 30),
                 TextField(

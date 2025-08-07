@@ -47,7 +47,7 @@ class _SignupScreenState extends State<SignupScreen> {
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center, // Center content vertically
             children: [
-              Text("Create Your Account", style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
+              const Text("Create Your Account", style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
               const SizedBox(height: 20),
               TextField(
                 controller: _nameController,

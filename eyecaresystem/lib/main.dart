@@ -1,14 +1,26 @@
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:camera/camera.dart';
 import 'screens/home_screen.dart';
 import 'screens/login_screen.dart';
 import 'screens/dashboard_screen.dart';
 import 'screens/eye_test_screen.dart';
-import 'screens/signup_screen.dart'; // Import the signup screen
-import 'services/api_service.dart'; // Make sure this path is correct
+import 'screens/signup_screen.dart';
 
-void main() {
+List<CameraDescription> cameras = [];
+
+Future<void> main() async {
+  // Ensure that plugin services are initialized so that `availableCameras()`
+  // can be called before `runApp()`
+  WidgetsFlutterBinding.ensureInitialized();
+
+  // Obtain a list of the available cameras on the device.
+  try {
+    cameras = await availableCameras();
+  } on CameraException catch (e) {
+    print('Error fetching cameras: ${e.code}\nError Message: ${e.description}');
+  }
+
   runApp(const MyApp());
 }
 
@@ -22,15 +34,17 @@ class MyApp extends StatelessWidget {
       theme: ThemeData(
         primarySwatch: Colors.teal,
         visualDensity: VisualDensity.adaptivePlatformDensity,
+        fontFamily: 'Inter',
       ),
+      debugShowCheckedModeBanner: false,
       initialRoute: '/',
       routes: {
         '/': (context) => const AuthChecker(),
         '/login': (context) => const LoginScreen(),
-        '/signup': (context) => const SignupScreen(), // Add signup route
+        '/signup': (context) => const SignupScreen(),
         '/home': (context) => const HomeScreen(),
         '/dashboard': (context) => const DashboardScreen(),
-        '/eye_test': (context) => const EyeTestScreen(),
+        '/eye_test': (context) => EyeTestScreen(cameras: cameras),
       },
     );
   }
@@ -54,7 +68,7 @@ class _AuthCheckerState extends State<AuthChecker> {
     final prefs = await SharedPreferences.getInstance();
     final token = prefs.getString('token');
     if (mounted) {
-      if (token == null) {
+      if (token == null || token.isEmpty) {
         Navigator.pushReplacementNamed(context, '/login');
       } else {
         Navigator.pushReplacementNamed(context, '/home');

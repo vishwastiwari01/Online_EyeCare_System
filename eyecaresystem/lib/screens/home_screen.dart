@@ -1,44 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'eye_test_screen.dart';
-import 'dashboard_screen.dart';
-import 'login_screen.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-class HomeScreen extends StatefulWidget {
+class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
 
-  @override
-  State<HomeScreen> createState() => _HomeScreenState();
-}
-
-class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateMixin {
-  late AnimationController _animationController;
-  late Animation<double> _pulseAnimation;
-
-  @override
-  void initState() {
-    super.initState();
-    _animationController = AnimationController(
-      vsync: this,
-      duration: const Duration(seconds: 2),
-    )..repeat(reverse: true);
-
-    _pulseAnimation = Tween<double>(begin: 1.0, end: 1.3).animate(
-      CurvedAnimation(parent: _animationController, curve: Curves.easeInOut),
-    );
-  }
-
-  @override
-  void dispose() {
-    _animationController.dispose();
-    super.dispose();
-  }
-
-  Future<void> _logout() async {
+  Future<void> _logout(BuildContext context) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove('token');
-    if (mounted) {
+    if (context.mounted) {
       Navigator.pushReplacementNamed(context, '/login');
     }
   }
@@ -46,199 +16,189 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFE7F3F2),
-      appBar: AppBar(
-        backgroundColor: const Color(0xFF014D4E),
-        elevation: 0,
-        title: Text(
-          'ClearView',
-          style: GoogleFonts.poppins(
-            fontSize: 28,
-            fontWeight: FontWeight.w700,
-            color: Colors.white,
-          ),
-        ),
-        actions: [
-          _navButton(context, "Dashboard"),
-          _navButton(context, "About"),
-          _navButton(context, "Start Test"),
-          IconButton(
-            onPressed: _logout,
-            icon: Icon(Icons.logout),
-            tooltip: 'Logout',
-            color: Colors.white, // Ensure icon color is visible
-          )
-        ],
-      ),
-      body: SingleChildScrollView(
+      backgroundColor: const Color(0xFFF8F9FA),
+      body: SafeArea(
         child: Column(
           children: [
-            _heroSection(context),
-            _featuresSection(),
-            _dashboardPreview(),
+            _buildAppBar(context),
+            Expanded(
+              child: ListView(
+                padding: const EdgeInsets.symmetric(horizontal: 20),
+                children: [
+                  const SizedBox(height: 20),
+                  _buildHeroSection(context),
+                  const SizedBox(height: 30),
+                  _buildSectionTitle("Features"),
+                  const SizedBox(height: 16),
+                  _buildFeatureCard(
+                    context,
+                    icon: Icons.visibility,
+                    title: "Comprehensive Eye Test",
+                    subtitle: "Test your vision from the comfort of your home.",
+                    color: Colors.teal,
+                    onTap: () => Navigator.pushNamed(context, '/eye_test'),
+                  ),
+                  const SizedBox(height: 12),
+                  _buildFeatureCard(
+                    context,
+                    icon: Icons.history,
+                    title: "View Your Results",
+                    subtitle: "Track your vision history over time.",
+                    color: Colors.blue,
+                    onTap: () => Navigator.pushNamed(context, '/dashboard'),
+                  ),
+                   const SizedBox(height: 30),
+                ],
+              ),
+            ),
           ],
         ),
       ),
     );
   }
 
-  Widget _navButton(BuildContext context, String title) {
-    return TextButton(
-      onPressed: () {
-        if (title == "Start Test") {
-          Navigator.pushNamed(context, '/eye_test');
-        } else if (title == "Dashboard") {
-          Navigator.pushNamed(context, '/dashboard');
-        }
-        // "About" doesn't navigate anywhere now
-      },
-      child: Text(
-        title,
-        style: GoogleFonts.poppins(color: Colors.white, fontSize: 18),
-      ),
-    );
-  }
-
-  Widget _heroSection(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 64),
-      color: const Color(0xFF014D4E),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.center,
+  Widget _buildAppBar(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 16, 20, 10),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          ScaleTransition(
-            scale: _pulseAnimation,
-            child: Container(
-              padding: const EdgeInsets.all(30),
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: const Color(0xFF64FFDA).withOpacity(0.1),
-                boxShadow: [
-                  BoxShadow(
-                    color: const Color(0xFF64FFDA).withOpacity(0.6),
-                    blurRadius: 30,
-                    spreadRadius: 5,
-                  ),
-                ],
-              ),
-              child: const Icon(Icons.remove_red_eye, size: 100, color: Colors.white),
-            ),
-          ),
-          const SizedBox(height: 24),
           Text(
-            "ClearView",
-            textAlign: TextAlign.center,
+            'ClearView',
             style: GoogleFonts.poppins(
-              fontSize: 56,
-              color: Colors.white,
+              fontSize: 28,
               fontWeight: FontWeight.bold,
+              color: const Color(0xFF1A202C),
             ),
           ),
-          const SizedBox(height: 12),
-          Text(
-            "Your Virtual Eye Care Assistant",
-            textAlign: TextAlign.center,
-            style: GoogleFonts.poppins(fontSize: 24, color: Colors.white70),
-          ),
-          const SizedBox(height: 32),
-          ElevatedButton(
-            onPressed: () {
-              Navigator.pushNamed(context, '/eye_test');
-            },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.white,
-              foregroundColor: const Color(0xFF014D4E),
-              padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 20),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-              textStyle: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-            ),
-            child: const Text("Start Your Test"),
+          IconButton(
+            onPressed: () => _logout(context),
+            icon: const Icon(Icons.logout_rounded, color: Colors.grey, size: 28),
+            tooltip: 'Logout',
           )
         ],
       ),
     );
   }
 
-  Widget _featuresSection() {
+  Widget _buildHeroSection(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.all(32),
-      child: Column(
-        children: [
-          const SizedBox(height: 24),
-          Text(
-            "Why Choose ClearView?",
-            textAlign: TextAlign.center,
-            style: GoogleFonts.poppins(fontSize: 32, fontWeight: FontWeight.bold, color: Colors.black87),
-          ),
-          const SizedBox(height: 16),
-          Text(
-            "Our AI-powered virtual eye tests bring accuracy and convenience right to your screen.",
-            textAlign: TextAlign.center,
-            style: GoogleFonts.poppins(fontSize: 18, color: Colors.black54, height: 1.5),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _dashboardPreview() {
-    return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 24, vertical: 48),
       padding: const EdgeInsets.all(24),
       decoration: BoxDecoration(
-        color: Colors.white,
+        gradient: LinearGradient(
+          colors: [Colors.teal.shade400, Colors.teal.shade600],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
         borderRadius: BorderRadius.circular(24),
-        boxShadow: const [
-          BoxShadow(color: Colors.black26, blurRadius: 12, offset: Offset(0, 6)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.teal.withOpacity(0.3),
+            blurRadius: 20,
+            offset: const Offset(0, 10),
+          )
         ],
       ),
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            "Dashboard Preview",
+            "Welcome Back!",
+            style: GoogleFonts.poppins(
+              fontSize: 22,
+              fontWeight: FontWeight.w500,
+              color: Colors.white.withOpacity(0.9),
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            "Ready for your next vision check?",
             style: GoogleFonts.poppins(
               fontSize: 26,
               fontWeight: FontWeight.bold,
-              color: const Color(0xFF014D4E),
+              color: Colors.white,
             ),
           ),
-          const SizedBox(height: 16),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-            children: [
-              _dashboardCard("Last Test", "Normal Vision"),
-              _dashboardCard("Next Check", "May 25, 2025"),
-              _dashboardCard("Tips", "Protect from UV"),
-            ],
-          ),
+          const SizedBox(height: 20),
+          ElevatedButton(
+            onPressed: () => Navigator.pushNamed(context, '/eye_test'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.white,
+              foregroundColor: Colors.teal.shade700,
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+              textStyle: GoogleFonts.poppins(fontSize: 16, fontWeight: FontWeight.w600),
+            ),
+            child: const Text("Start New Test"),
+          )
         ],
       ),
     );
   }
 
-  Widget _dashboardCard(String title, String content) {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      width: 100,
-      decoration: BoxDecoration(
-        color: const Color(0xFFE0F7F5),
-        borderRadius: BorderRadius.circular(16),
+  Widget _buildSectionTitle(String title) {
+    return Text(
+      title,
+      style: GoogleFonts.poppins(
+        fontSize: 20,
+        fontWeight: FontWeight.bold,
+        color: const Color(0xFF4A5568),
       ),
-      child: Column(
-        children: [
-          Text(
-            title,
-            style: GoogleFonts.poppins(fontSize: 16, fontWeight: FontWeight.w600, color: const Color(0xFF014D4E)),
-            textAlign: TextAlign.center,
-          ),
-          const SizedBox(height: 8),
-          Text(
-            content,
-            style: GoogleFonts.poppins(fontSize: 14, color: Colors.black87),
-            textAlign: TextAlign.center,
-          ),
-        ],
+    );
+  }
+
+  Widget _buildFeatureCard(BuildContext context, {required IconData icon, required String title, required String subtitle, required Color color, required VoidCallback onTap}) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.all(20),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(20),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.05),
+              blurRadius: 15,
+              offset: const Offset(0, 5),
+            )
+          ],
+        ),
+        child: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: color.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: Icon(icon, color: color, size: 28),
+            ),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: GoogleFonts.poppins(
+                      fontSize: 17,
+                      fontWeight: FontWeight.bold,
+                      color: const Color(0xFF1A202C),
+                    ),
+                  ),
+                  Text(
+                    subtitle,
+                    style: GoogleFonts.poppins(
+                      fontSize: 14,
+                      color: Colors.grey.shade600,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const Icon(Icons.arrow_forward_ios_rounded, color: Colors.grey, size: 18),
+          ],
+        ),
       ),
     );
   }
