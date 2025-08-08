@@ -106,7 +106,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
             const SizedBox(height: 12),
             _buildResultRow("Left Eye", result['left_eye_acuity'], result['left_eye_power'].toString(), result['left_eye_condition']),
             const SizedBox(height: 16),
-            _buildResultRow("Right Eye", result['right_eye_acuity'], result['right_eye_power'].toString(), result['right_eye_condition']),
+             _buildResultRow("Right Eye", result['right_eye_acuity'], result['right_eye_power'].toString(), result['right_eye_condition']),
           ],
         ),
       ),
@@ -136,4 +136,3 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
   }
 }
-

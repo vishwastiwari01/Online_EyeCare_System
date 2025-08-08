@@ -6,21 +6,17 @@ import 'screens/login_screen.dart';
 import 'screens/dashboard_screen.dart';
 import 'screens/eye_test_screen.dart';
 import 'screens/signup_screen.dart';
+import 'screens/keratometry_screen.dart'; // <-- Import the new screen
 
 List<CameraDescription> cameras = [];
 
 Future<void> main() async {
-  // Ensure that plugin services are initialized so that `availableCameras()`
-  // can be called before `runApp()`
   WidgetsFlutterBinding.ensureInitialized();
-
-  // Obtain a list of the available cameras on the device.
   try {
     cameras = await availableCameras();
   } on CameraException catch (e) {
     print('Error fetching cameras: ${e.code}\nError Message: ${e.description}');
   }
-
   runApp(const MyApp());
 }
 
@@ -44,8 +40,9 @@ class MyApp extends StatelessWidget {
         '/signup': (context) => const SignupScreen(),
         '/home': (context) => const HomeScreen(),
         '/dashboard': (context) => const DashboardScreen(),
-        // This is the corrected line that passes the camera list
         '/eye_test': (context) => EyeTestScreen(cameras: cameras),
+        // --- NEW ROUTE ADDED HERE ---
+        '/keratometry': (context) => KeratometryScreen(cameras: cameras),
       },
     );
   }

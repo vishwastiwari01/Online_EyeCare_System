@@ -1,22 +1,11 @@
 import 'package:flutter/material.dart';
 import 'dart:math';
-import 'dart:ui' as ui;
+import 'dart:ui';
 import 'package:camera/camera.dart';
-import '../services/api_service.dart';
-import 'package:google_fonts/google_fonts.dart';
-
-// Enum for the different stages of the comprehensive eye test
-enum TestPhase {
-  welcome,
-  calibration,
-  snellenChart,
-  astigmatismAxis,
-  astigmatismPower,
-  refraction,
-  finished,
-}
+import '../services/api_service.dart'; // Added for saving results
 
 class EyeTestScreen extends StatefulWidget {
+  // This now correctly receives the camera list from main.dart
   final List<CameraDescription> cameras;
   const EyeTestScreen({super.key, required this.cameras});
 
@@ -24,46 +13,63 @@ class EyeTestScreen extends StatefulWidget {
   _EyeTestScreenState createState() => _EyeTestScreenState();
 }
 
+enum TestPhase {
+  welcome,
+  nameInput,
+  ageInput,
+  distanceCalibration,
+  snellenChart,
+  refractionTest,
+  duochromeTest,
+  astigmatismTest,
+  depthPerceptionTest,
+  finished,
+}
+
+enum EyeCondition {
+  myopia,
+  hypermetropia,
+  presbyopia,
+  emmetropia,
+  unknown,
+}
+
 class _EyeTestScreenState extends State<EyeTestScreen> {
+  String _patientName = '';
+  int _userAge = 30;
   TestPhase _testPhase = TestPhase.welcome;
   bool _testingLeftEye = true;
-  
-  // Stores the final results for both eyes
-  Map<String, dynamic> _leftEyeResult = {};
-  Map<String, dynamic> _rightEyeResult = {};
 
-  // --- Test-specific state variables ---
   int _currentSnellenLine = 0;
-  double _currentRefractionDiopter = 0.0;
-  double _refractionStep = 2.0;
-  int _astigmatismAxis = 90;
-  double _astigmatismPower = 0.0;
+  final List<String> _snellenLines = [
+    'E', 'F P', 'T O Z', 'L P E D', 'P E C F D',
+    'E D F C Z P', 'F E L O P Z D', 'D E F P O T E C',
+    'L E F O D P C T', 'F D P L T C O'
+  ];
+  String _leftEyeSnellenAcuity = 'N/A';
+  String _rightEyeSnellenAcuity = 'N/A';
 
-  // Camera controller for calibration
+  double _currentDiopter = -1.0;
+  double _stepSize = 0.5;
+  static const double _minStepSize = 0.05;
+  static const double _diopterToSigmaFactor = 3.0;
+  double _leftEyePower = 0.0;
+  double _rightEyePower = 0.0;
+  EyeCondition _leftEyeCondition = EyeCondition.unknown;
+  EyeCondition _rightEyeCondition = EyeCondition.unknown;
+
+  bool _depthPerceptionPassed = false;
+
   CameraController? _cameraController;
   bool _isCameraInitialized = false;
-
-  final List<String> _snellenLines = ['E', 'F P', 'T O Z', 'L P E D', 'P E C F D', 'E D F C Z P'];
+  bool _isAtCorrectDistance = false;
 
   @override
   void initState() {
     super.initState();
+    // Correctly initialize camera using the passed list
     if (widget.cameras.isNotEmpty) {
-      _initializeCamera(widget.cameras.firstWhere(
-        (camera) => camera.lensDirection == CameraLensDirection.front,
-        orElse: () => widget.cameras.first,
-      ));
-    }
-  }
-
-  Future<void> _initializeCamera(CameraDescription cameraDescription) async {
-    _cameraController = CameraController(cameraDescription, ResolutionPreset.medium);
-    try {
-      await _cameraController!.initialize();
-      if (!mounted) return;
-      setState(() => _isCameraInitialized = true);
-    } catch (e) {
-      print('Error initializing camera: $e');
+      _initializeCamera();
     }
   }
 
@@ -73,149 +79,371 @@ class _EyeTestScreenState extends State<EyeTestScreen> {
     super.dispose();
   }
 
-  // --- Core Test Logic ---
+  Future<void> _initializeCamera() async {
+    final frontCamera = widget.cameras.firstWhere(
+      (camera) => camera.lensDirection == CameraLensDirection.front,
+      orElse: () => widget.cameras.first,
+    );
 
-  void _processSnellenResult(bool couldRead) {
-    if (couldRead && _currentSnellenLine < _snellenLines.length - 1) {
-      setState(() => _currentSnellenLine++);
-    } else {
-      String acuity = '20/${(200 / pow(2, _currentSnellenLine)).round()}';
-      if (_testingLeftEye) {
-        _leftEyeResult['acuity'] = acuity;
-      } else {
-        _rightEyeResult['acuity'] = acuity;
+    _cameraController = CameraController(
+      frontCamera,
+      ResolutionPreset.low,
+      enableAudio: false,
+    );
+
+    try {
+      await _cameraController!.initialize();
+      if (!mounted) return;
+      setState(() {
+        _isCameraInitialized = true;
+      });
+    } on CameraException catch (e) {
+      print('Camera Error: ${e.code}\n${e.description}');
+      if (mounted) {
+        setState(() {
+          _isCameraInitialized = false;
+        });
       }
-      _moveToNextPhase();
     }
   }
 
-  void _processRefractionChoice(bool optionA_isClearer) {
-    double change = optionA_isClearer ? -_refractionStep : _refractionStep;
-    _currentRefractionDiopter += change;
-
-    _refractionStep /= 2;
-
-    if (_refractionStep < 0.25) {
-      double finalPower = (_currentRefractionDiopter * 4).round() / 4.0;
-      String condition = finalPower < -0.25 ? 'Myopia' : (finalPower > 0.25 ? 'Hypermetropia' : 'Normal');
-      
-      if (_testingLeftEye) {
-        _leftEyeResult['power'] = finalPower;
-        _leftEyeResult['condition'] = condition;
-      } else {
-        _rightEyeResult['power'] = finalPower;
-        _rightEyeResult['condition'] = condition;
-      }
-      _moveToNextPhase();
+  // --- NEW: Function to save the final results ---
+  Future<void> _saveFinalResults() async {
+    final resultData = {
+      'left_eye_acuity': _leftEyeSnellenAcuity,
+      'right_eye_acuity': _rightEyeSnellenAcuity,
+      'left_eye_power': _leftEyePower,
+      'right_eye_power': _rightEyePower,
+      'left_eye_condition': _leftEyeCondition.toString().split('.').last,
+      'right_eye_condition': _rightEyeCondition.toString().split('.').last,
+    };
+    bool success = await ApiService.saveTestResult(resultData);
+    if(success) {
+        print("Results saved to history successfully!");
     } else {
-      setState(() {});
+        print("Failed to save results to history.");
     }
   }
-  
-  void _processAstigmatismAxis(int angle) {
-      _astigmatismAxis = angle;
-      if(_testingLeftEye) _leftEyeResult['astigmatism_axis'] = angle;
-      else _rightEyeResult['astigmatism_axis'] = angle;
-      _moveToNextPhase();
-  }
-
-  void _processAstigmatismPower(bool horizontalIsClearer) {
-      _astigmatismPower += horizontalIsClearer ? -0.25 : 0.25;
-      if(_astigmatismPower.abs() > 4.0) { // Limit the power
-        _finalizeAstigmatismPower();
-      } else {
-        setState((){});
-      }
-  }
-
-  void _finalizeAstigmatismPower() {
-      if(_testingLeftEye) _leftEyeResult['astigmatism_power'] = _astigmatismPower;
-      else _rightEyeResult['astigmatism_power'] = _astigmatismPower;
-      _moveToNextPhase();
-  }
 
 
-  // --- Test Flow Management ---
-
-  void _startEyeTest() {
+  void _startSnellenTest() {
     setState(() {
-      _testingLeftEye = true;
-      _leftEyeResult = {};
-      _rightEyeResult = {};
-      _resetTestStates();
       _testPhase = TestPhase.snellenChart;
+      _currentSnellenLine = 0;
     });
   }
 
-  void _resetTestStates() {
-    _currentSnellenLine = 0;
-    _currentRefractionDiopter = 0.0;
-    _refractionStep = 2.0;
-    _astigmatismAxis = 90;
-    _astigmatismPower = 0.0;
+  void _nextSnellenLine(bool canRead) {
+    if (canRead) {
+      if (_currentSnellenLine < _snellenLines.length - 1) {
+        setState(() {
+          _currentSnellenLine++;
+        });
+      } else {
+        _finalizeSnellenTest(_snellenLines.length);
+      }
+    } else {
+      _finalizeSnellenTest(_currentSnellenLine);
+    }
+  }
+
+  String _getSnellenAcuity(int lastLineReadIndex) {
+    if (lastLineReadIndex >= _snellenLines.length) return '20/20';
+    if (lastLineReadIndex <= 0) return '20/200';
+    final denominators = [200, 100, 70, 50, 40, 30, 25, 20, 15, 10];
+    return '20/${denominators[lastLineReadIndex]}';
+  }
+
+  void _finalizeSnellenTest(int lastLineReadIndex) {
+    final acuity = _getSnellenAcuity(lastLineReadIndex);
+    setState(() {
+      if (_testingLeftEye) {
+        _leftEyeSnellenAcuity = acuity;
+      } else {
+        _rightEyeSnellenAcuity = acuity;
+      }
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _showSnellenResultDialog();
+    });
+  }
+
+  void _showSnellenResultDialog() {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => AlertDialog(
+        title: Text(
+          "${_testingLeftEye ? "Left" : "Right"} Eye Snellen Test Result",
+        ),
+        content: Text(
+          "Estimated Visual Acuity: ${_testingLeftEye ? _leftEyeSnellenAcuity : _rightEyeSnellenAcuity}",
+        ),
+        actions: [
+          TextButton(
+            onPressed: () {
+              Navigator.of(context).pop();
+              setState(() {
+                _testPhase = TestPhase.refractionTest;
+                _currentDiopter = -1.0;
+                _stepSize = 0.5;
+              });
+            },
+            child: const Text("Start Refraction Test"),
+          ),
+        ],
+      ),
+    );
+  }
+
+  double _getBlurSigma(double diopter) {
+    if (diopter >= 0) return 0.0;
+    return diopter.abs() * _diopterToSigmaFactor;
+  }
+
+  List<double> _getOptions() {
+    double optionA = _currentDiopter + _stepSize / 2;
+    double optionB = _currentDiopter - _stepSize / 2;
+    optionA = min(0.0, optionA);
+    optionB = min(0.0, optionB);
+    return [optionA, optionB];
+  }
+
+  void _processABRefractionChoice(int choice) {
+    setState(() {
+      final options = _getOptions();
+      if (choice == 1) {
+        _currentDiopter = options[0];
+      } else if (choice == 2) {
+        _currentDiopter = options[1];
+      }
+      _stepSize /= 2;
+      if (_stepSize < _minStepSize) {
+        _finalizeRefractionTest(_currentDiopter);
+      }
+    });
+  }
+
+  void _finalizeRefractionTest(double finalPower) {
+    EyeCondition condition;
+    if (finalPower < -0.25) {
+      condition = EyeCondition.myopia;
+    } else if (finalPower > 0.25) {
+      if (_userAge >= 40 && finalPower > 0.75) {
+        condition = EyeCondition.presbyopia;
+      } else {
+        condition = EyeCondition.hypermetropia;
+      }
+    } else {
+      condition = EyeCondition.emmetropia;
+    }
+
+    setState(() {
+      if (_testingLeftEye) {
+        _leftEyePower = finalPower;
+        _leftEyeCondition = condition;
+      } else {
+        _rightEyePower = finalPower;
+        _rightEyeCondition = condition;
+      }
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _showRefractionResultDialog();
+    });
+  }
+
+  void _showRefractionResultDialog() {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => AlertDialog(
+        title: Text(
+          "${_testingLeftEye ? "Left" : "Right"} Eye Refraction Result",
+        ),
+        content: Text(
+          "Estimated Lens Power: ${_testingLeftEye ? _leftEyePower.toStringAsFixed(2) : _rightEyePower.toStringAsFixed(2)} D\n"
+          "Condition: ${_testingLeftEye ? _leftEyeCondition.toString().split('.').last.toUpperCase() : _rightEyeCondition.toString().split('.').last.toUpperCase()}",
+        ),
+        actions: [
+          TextButton(
+            onPressed: () {
+              Navigator.of(context).pop();
+              if (_testingLeftEye) {
+                setState(() {
+                  _testingLeftEye = false;
+                  _testPhase = TestPhase.distanceCalibration;
+                  _isAtCorrectDistance = false;
+                });
+              } else {
+                _startDuochromeTest();
+              }
+            },
+            child: Text(_testingLeftEye ? "Start Right Eye Test" : "Start Duochrome Test"),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _startDuochromeTest() {
+    setState(() => _testPhase = TestPhase.duochromeTest);
+  }
+
+  void _handleDuochromeResult(String result) {
+    _startAstigmatismTest();
+  }
+
+  void _startAstigmatismTest() {
+    setState(() => _testPhase = TestPhase.astigmatismTest);
+  }
+
+  void _handleAstigmatismResult(String result) {
+    _startDepthPerceptionTest();
+  }
+
+  void _startDepthPerceptionTest() {
+    setState(() => _testPhase = TestPhase.depthPerceptionTest);
+  }
+
+  void _processDepthPerceptionChoice(bool choseCloser) {
+    setState(() {
+      _depthPerceptionPassed = choseCloser;
+      _testPhase = TestPhase.finished;
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _showOverallResult();
+      _saveFinalResults(); // Save results when the test is fully complete
+    });
   }
 
   void _moveToNextPhase() {
     setState(() {
       switch (_testPhase) {
         case TestPhase.welcome:
-          _testPhase = TestPhase.calibration;
+          _testPhase = TestPhase.nameInput;
           break;
-        case TestPhase.calibration:
-          _startEyeTest();
+        case TestPhase.nameInput:
+          _testPhase = TestPhase.ageInput;
           break;
-        case TestPhase.snellenChart:
-          _testPhase = TestPhase.astigmatismAxis;
+        case TestPhase.ageInput:
+          _testPhase = TestPhase.distanceCalibration;
           break;
-        case TestPhase.astigmatismAxis:
-           _testPhase = TestPhase.astigmatismPower;
-           break;
-        case TestPhase.astigmatismPower:
-          _testPhase = TestPhase.refraction;
+        case TestPhase.distanceCalibration:
+          _startSnellenTest();
           break;
-        case TestPhase.refraction:
-          if (_testingLeftEye) {
-            _testingLeftEye = false;
-            _resetTestStates();
-            _testPhase = TestPhase.snellenChart;
-          } else {
-            _testPhase = TestPhase.finished;
-            _saveFinalResults();
-          }
-          break;
-        case TestPhase.finished:
+        default:
           break;
       }
     });
   }
-  
-  Future<void> _saveFinalResults() async {
-    final resultData = {
-      'left_eye_acuity': _leftEyeResult['acuity'] ?? 'N/A',
-      'right_eye_acuity': _rightEyeResult['acuity'] ?? 'N/A',
-      'left_eye_power': _leftEyeResult['power'] ?? 0.0,
-      'right_eye_power': _rightEyeResult['power'] ?? 0.0,
-      'left_eye_condition': _leftEyeResult['condition'] ?? 'Unknown',
-      'right_eye_condition': _rightEyeResult['condition'] ?? 'Unknown',
-    };
-    await ApiService.saveTestResult(resultData);
+
+  void _showOverallResult() {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (BuildContext context) {
+        return Dialog(
+          backgroundColor: Colors.transparent,
+          child: Container(
+            padding: const EdgeInsets.all(25),
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: [Colors.teal.shade700, Colors.teal.shade900],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+              borderRadius: BorderRadius.circular(25),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.visibility, color: Colors.white, size: 60),
+                const SizedBox(height: 15),
+                const Text(
+                  "Your ClearView Summary",
+                  style: TextStyle(fontSize: 26, fontWeight: FontWeight.bold, color: Colors.white),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 25),
+                _buildResultRow("Name", _patientName),
+                _buildResultRow("Age", _userAge.toString()),
+                const SizedBox(height: 20),
+                _buildResultRow("Left Eye Acuity", _leftEyeSnellenAcuity),
+                _buildResultRow("Left Eye Power", "${_leftEyePower.toStringAsFixed(2)} D"),
+                _buildResultRow("Left Eye Condition", _leftEyeCondition.toString().split('.').last.toUpperCase()),
+                const SizedBox(height: 20),
+                _buildResultRow("Right Eye Acuity", _rightEyeSnellenAcuity),
+                _buildResultRow("Right Eye Power", "${_rightEyePower.toStringAsFixed(2)} D"),
+                _buildResultRow("Right Eye Condition", _rightEyeCondition.toString().split('.').last.toUpperCase()),
+                const SizedBox(height: 20),
+                _buildResultRow("Depth Perception", _depthPerceptionPassed ? "Passed" : "Failed"),
+                const SizedBox(height: 30),
+                Text(
+                  "Disclaimer: This is a simulated test and not a substitute for a professional eye examination.",
+                  style: TextStyle(fontSize: 13, fontStyle: FontStyle.italic, color: Colors.teal.shade100),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 20),
+                _animatedButton(
+                  "Finish Test",
+                  Colors.teal.shade300,
+                  () {
+                    Navigator.of(context).pop(); // Close dialog
+                    Navigator.of(context).pop(); // Go back from test screen
+                  },
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
   }
 
-  // --- UI Build Methods ---
+  Widget _buildResultRow(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(label, style: TextStyle(fontSize: 18, color: Colors.teal.shade100, fontWeight: FontWeight.w500)),
+          Text(value, style: const TextStyle(fontSize: 18, color: Colors.white, fontWeight: FontWeight.bold)),
+        ],
+      ),
+    );
+  }
+
+  Widget _animatedButton(String text, Color color, VoidCallback onPressed) {
+    return InkWell(
+      onTap: onPressed,
+      borderRadius: BorderRadius.circular(16),
+      child: Ink(
+        decoration: BoxDecoration(
+          color: color,
+          borderRadius: BorderRadius.circular(16),
+        ),
+        padding: const EdgeInsets.symmetric(horizontal: 30, vertical: 12),
+        child: Text(text, style: const TextStyle(fontSize: 18, color: Colors.white, fontWeight: FontWeight.bold)),
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF8F9FA),
+      backgroundColor: Colors.teal[50],
       appBar: AppBar(
-        title: Text("ClearView Eye Test", style: GoogleFonts.poppins(fontWeight: FontWeight.bold)),
-        backgroundColor: Colors.white,
-        elevation: 0,
-        foregroundColor: Colors.black87,
+        backgroundColor: Colors.teal[800],
+        title: const Text("ClearView Eye Test", style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Colors.white)),
+        centerTitle: true,
       ),
-      body: AnimatedSwitcher(
-        duration: const Duration(milliseconds: 300),
-        child: _buildCurrentPhaseUI(),
+      body: Padding(
+        padding: const EdgeInsets.all(20.0),
+        child: Center(
+          child: SingleChildScrollView(
+            child: _buildCurrentPhaseUI(),
+          ),
+        ),
       ),
     );
   }
@@ -223,393 +451,259 @@ class _EyeTestScreenState extends State<EyeTestScreen> {
   Widget _buildCurrentPhaseUI() {
     switch (_testPhase) {
       case TestPhase.welcome:
-        return _buildWelcomeUI();
-      case TestPhase.calibration:
-        return _buildCalibrationUI();
+        return Column(
+          children: [
+            Text("Welcome to ClearView Eye Test!", style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Colors.teal[800]), textAlign: TextAlign.center),
+            const SizedBox(height: 30),
+            _animatedButton("Start Test", Colors.teal, () => _moveToNextPhase()),
+          ],
+        );
+      case TestPhase.nameInput:
+        return Column(
+          children: [
+            Text("Let's start! What's your name?", style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Colors.teal[800]), textAlign: TextAlign.center),
+            const SizedBox(height: 20),
+            SizedBox(
+              width: 250,
+              child: TextField(
+                textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 24, color: Colors.teal[800], fontWeight: FontWeight.bold),
+                decoration: InputDecoration(hintText: "Your Name", border: OutlineInputBorder(borderRadius: BorderRadius.circular(12))),
+                onChanged: (value) => _patientName = value,
+                onSubmitted: (value) {
+                  setState(() {
+                    _patientName = value;
+                    _moveToNextPhase();
+                  });
+                },
+              ),
+            ),
+            const SizedBox(height: 30),
+            _animatedButton("Confirm Name & Continue", Colors.teal, () => setState(() => _moveToNextPhase())),
+          ],
+        );
+      case TestPhase.ageInput:
+        return Column(
+          children: [
+            Text("Hello ${_patientName.split(' ')[0]}! Please enter your age:", style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Colors.teal[800]), textAlign: TextAlign.center),
+            const SizedBox(height: 20),
+            SizedBox(
+              width: 100,
+              child: TextField(
+                keyboardType: TextInputType.number,
+                textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 24, color: Colors.teal[800], fontWeight: FontWeight.bold),
+                decoration: InputDecoration(hintText: "Age", border: OutlineInputBorder(borderRadius: BorderRadius.circular(12))),
+                onChanged: (value) => _userAge = int.tryParse(value) ?? 30,
+                onSubmitted: (value) {
+                  setState(() {
+                    _userAge = int.tryParse(value) ?? 30;
+                    _moveToNextPhase();
+                  });
+                },
+              ),
+            ),
+            const SizedBox(height: 30),
+            _animatedButton("Confirm Age & Continue", Colors.teal, () => setState(() => _moveToNextPhase())),
+          ],
+        );
+      case TestPhase.distanceCalibration:
+        return Column(
+          children: [
+            Text("Position yourself correctly. Your face should be within the green box.", style: TextStyle(fontSize: 20, color: Colors.teal[800]), textAlign: TextAlign.center),
+            const SizedBox(height: 20),
+            if (_isCameraInitialized)
+              SizedBox(
+                height: 200,
+                width: 300,
+                child: Stack(
+                  children: [
+                    ClipRRect(borderRadius: BorderRadius.circular(15), child: CameraPreview(_cameraController!)),
+                    Center(
+                      child: Container(
+                        width: 150,
+                        height: 150,
+                        decoration: BoxDecoration(border: Border.all(color: _isAtCorrectDistance ? Colors.green : Colors.red, width: 4), borderRadius: BorderRadius.circular(10)),
+                      ),
+                    ),
+                  ],
+                ),
+              )
+            else
+              const CircularProgressIndicator(color: Colors.teal),
+            const SizedBox(height: 20),
+            _animatedButton(
+              "Confirm Distance",
+              _isAtCorrectDistance ? Colors.green : Colors.teal,
+              () {
+                setState(() {
+                  _isAtCorrectDistance = true;
+                  _moveToNextPhase();
+                });
+              },
+            ),
+          ],
+        );
       case TestPhase.snellenChart:
-        return _buildSnellenChartUI();
-      case TestPhase.astigmatismAxis:
-        return _buildAstigmatismAxisUI();
-      case TestPhase.astigmatismPower:
-        return _buildAstigmatismPowerUI();
-      case TestPhase.refraction:
-        return _buildRefractionUI();
+        return _buildSnellenChartTestUI();
+      case TestPhase.refractionTest:
+        final options = _getOptions();
+        return Column(
+          children: [
+            Text("Which text looks clearer?", style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.teal[800]), textAlign: TextAlign.center),
+            const SizedBox(height: 20),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+              children: [
+                Expanded(
+                  child: Column(
+                    children: [
+                      Text("Option A", style: TextStyle(fontSize: 18, color: Colors.teal[700])),
+                      ImageFiltered(
+                        imageFilter: ImageFilter.blur(sigmaX: _getBlurSigma(options[0]), sigmaY: _getBlurSigma(options[0])),
+                        child: Text("ClearView", style: TextStyle(fontSize: 32, fontWeight: FontWeight.bold, color: Colors.teal[800])),
+                      ),
+                      const SizedBox(height: 20),
+                      _animatedButton("A is Clearer", Colors.teal.shade700, () => _processABRefractionChoice(1)),
+                    ],
+                  ),
+                ),
+                Expanded(
+                  child: Column(
+                    children: [
+                      Text("Option B", style: TextStyle(fontSize: 18, color: Colors.teal[700])),
+                      ImageFiltered(
+                        imageFilter: ImageFilter.blur(sigmaX: _getBlurSigma(options[1]), sigmaY: _getBlurSigma(options[1])),
+                        child: Text("ClearView", style: TextStyle(fontSize: 32, fontWeight: FontWeight.bold, color: Colors.teal[800])),
+                      ),
+                      const SizedBox(height: 20),
+                      _animatedButton("B is Clearer", Colors.teal.shade700, () => _processABRefractionChoice(2)),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 20),
+            _animatedButton("Both Equal", Colors.teal.shade500, () => _processABRefractionChoice(0)),
+          ],
+        );
+      case TestPhase.duochromeTest:
+        return _buildDuochromeTestUI();
+      case TestPhase.astigmatismTest:
+        return _buildAstigmatismTestUI();
+      case TestPhase.depthPerceptionTest:
+        return Column(
+          children: [
+            Text("Which circle appears closer?", style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.teal[800]), textAlign: TextAlign.center),
+            const SizedBox(height: 30),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+              children: [
+                GestureDetector(
+                  onTap: () => _processDepthPerceptionChoice(true),
+                  child: Container(width: 100, height: 100, decoration: BoxDecoration(shape: BoxShape.circle, color: Colors.blue.shade300, boxShadow: const [BoxShadow(color: Colors.black38, blurRadius: 5, offset: Offset(2, 2))])),
+                ),
+                GestureDetector(
+                  onTap: () => _processDepthPerceptionChoice(false),
+                  child: Container(width: 100, height: 100, decoration: BoxDecoration(shape: BoxShape.circle, color: Colors.blue.shade600)),
+                ),
+              ],
+            ),
+          ],
+        );
       case TestPhase.finished:
-        return _buildFinishedUI();
+        return Column(
+          children: [
+            const Icon(Icons.check_circle_outline, color: Colors.green, size: 80),
+            const SizedBox(height: 20),
+            Text("All tests completed!", style: TextStyle(fontSize: 22, color: Colors.teal[800], fontWeight: FontWeight.bold), textAlign: TextAlign.center),
+            const SizedBox(height: 30),
+            _animatedButton("Show Results", Colors.teal.shade700, () => _showOverallResult()),
+          ],
+        );
     }
   }
 
-  Widget _buildWelcomeUI() {
-    return Padding(
-      key: const ValueKey('welcome'),
-      padding: const EdgeInsets.all(24.0),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          const Icon(Icons.visibility, color: Colors.teal, size: 80),
-          const SizedBox(height: 24),
-          Text(
-            "Comprehensive Vision Test",
-            textAlign: TextAlign.center,
-            style: GoogleFonts.poppins(fontSize: 28, fontWeight: FontWeight.bold),
-          ),
-          const SizedBox(height: 16),
-          Text(
-            "This test will check your visual acuity, refractive error, and astigmatism. Please find a quiet, well-lit room.",
-            textAlign: TextAlign.center,
-            style: GoogleFonts.poppins(fontSize: 16, color: Colors.grey.shade600),
-          ),
-          const SizedBox(height: 40),
-          ElevatedButton(
-            onPressed: _moveToNextPhase,
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.teal,
-              padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 16),
-              textStyle: GoogleFonts.poppins(fontSize: 18, fontWeight: FontWeight.w600),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-            ),
-            child: const Text("Get Started"),
-          ),
-        ],
-      ),
-    );
-  }
-  
-  Widget _buildCalibrationUI() {
-    return Padding(
-      key: const ValueKey('calibration'),
-      padding: const EdgeInsets.all(24.0),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-           Text(
-            "Distance Calibration",
-            textAlign: TextAlign.center,
-            style: GoogleFonts.poppins(fontSize: 28, fontWeight: FontWeight.bold),
-          ),
-          const SizedBox(height: 16),
-          Text(
-            "Please cover your ${_testingLeftEye ? 'right' : 'left'} eye and stand back. Position your face inside the green box. Click 'Ready' when you are in position.",
-            textAlign: TextAlign.center,
-            style: GoogleFonts.poppins(fontSize: 16, color: Colors.grey.shade600),
-          ),
-          const SizedBox(height: 20),
-          Expanded(
-            child: Container(
-              clipBehavior: Clip.antiAlias,
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(20),
-              ),
-              child: _isCameraInitialized
-                  ? Stack(
-                      alignment: Alignment.center,
-                      children: [
-                        CameraPreview(_cameraController!),
-                        Container(
-                          width: 200,
-                          height: 280,
-                          decoration: BoxDecoration(
-                            border: Border.all(color: Colors.green, width: 4),
-                            borderRadius: BorderRadius.circular(10)
-                          ),
-                        )
-                      ],
-                    )
-                  : const Center(child: CircularProgressIndicator()),
-            ),
-          ),
-          const SizedBox(height: 20),
-          ElevatedButton(
-            onPressed: _moveToNextPhase,
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.teal,
-              padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 16),
-            ),
-            child: const Text("Ready", style: TextStyle(fontSize: 18)),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildSnellenChartUI() {
-    double fontSize = (MediaQuery.of(context).size.width * 0.8) / pow(2, _currentSnellenLine);
-    
+  Widget _buildSnellenChartTestUI() {
     return Column(
-      key: const ValueKey('snellen'),
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
-        Text("Testing ${_testingLeftEye ? 'Left' : 'Right'} Eye: Visual Acuity", style: GoogleFonts.poppins(fontSize: 18, color: Colors.grey.shade700)),
-        const SizedBox(height: 40),
-        Expanded(
-          child: Center(
-            child: Text(
-              _snellenLines[_currentSnellenLine],
-              style: TextStyle(fontSize: min(150, fontSize), fontWeight: FontWeight.bold, letterSpacing: 8),
-            ),
-          ),
-        ),
-        Text("Can you read the letters above?", style: GoogleFonts.poppins(fontSize: 20)),
+        Text("Snellen Chart Test", style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Colors.teal[800]), textAlign: TextAlign.center),
+        const SizedBox(height: 30),
+        Text("Can you read the line?", style: TextStyle(fontSize: 20, color: Colors.teal[800])),
         const SizedBox(height: 20),
+        Text(_snellenLines[_currentSnellenLine], style: TextStyle(fontSize: max(24.0, 60 - _currentSnellenLine * 4.0), fontWeight: FontWeight.bold, letterSpacing: 4, color: Colors.teal[800])),
+        const SizedBox(height: 40),
         Row(
-          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+          mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            ElevatedButton(onPressed: () => _processSnellenResult(true), child: const Text("Yes")),
-            ElevatedButton(onPressed: () => _processSnellenResult(false), child: const Text("No")),
+            _animatedButton("Yes", Colors.teal, () => _nextSnellenLine(true)),
+            const SizedBox(width: 20),
+            _animatedButton("No", Colors.teal, () => _nextSnellenLine(false)),
           ],
         ),
-        const SizedBox(height: 40),
-      ],
-    );
-  }
-  
-  Widget _buildAstigmatismAxisUI() {
-    return Column(
-      key: const ValueKey('astig_axis'),
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
-        Text("Testing ${_testingLeftEye ? 'Left' : 'Right'} Eye: Astigmatism Axis", style: GoogleFonts.poppins(fontSize: 18, color: Colors.grey.shade700)),
-        const SizedBox(height: 20),
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 20.0),
-          child: Text(
-            "Which set of lines appears sharpest and darkest?",
-            textAlign: TextAlign.center,
-            style: GoogleFonts.poppins(fontSize: 20),
-          ),
-        ),
-        const SizedBox(height: 20),
-        Expanded(
-          child: Center(
-            child: SizedBox(
-              width: 300,
-              height: 300,
-              child: CustomPaint(
-                painter: AstigmatismFanPainter(),
-              ),
-            ),
-          ),
-        ),
-        Wrap(
-            alignment: WrapAlignment.center,
-            spacing: 8.0,
-            runSpacing: 4.0,
-            children: List.generate(6, (index) {
-                int angle = (index + 1) * 30;
-                return ElevatedButton(onPressed: () => _processAstigmatismAxis(angle), child: Text("$angle°"));
-            }),
-        ),
-        const SizedBox(height: 10),
-        TextButton(onPressed: () => _processAstigmatismAxis(0), child: const Text("All are equal")),
-        const SizedBox(height: 40),
       ],
     );
   }
 
-  Widget _buildAstigmatismPowerUI() {
+  Widget _buildDuochromeTestUI() {
     return Column(
-      key: const ValueKey('astig_power'),
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
-        Text("Testing ${_testingLeftEye ? 'Left' : 'Right'} Eye: Astigmatism Power", style: GoogleFonts.poppins(fontSize: 18, color: Colors.grey.shade700)),
-        const SizedBox(height: 20),
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 20.0),
-          child: Text(
-            "Do the lines in the two blocks appear equally sharp?",
-            textAlign: TextAlign.center,
-            style: GoogleFonts.poppins(fontSize: 20),
-          ),
-        ),
-        const SizedBox(height: 20),
-        Expanded(
-          child: Center(
-            child: SizedBox(
-              width: 300,
-              height: 300,
-              child: CustomPaint(
-                painter: AstigmatismBlockPainter(axis: _astigmatismAxis, power: _astigmatismPower),
-              ),
-            ),
-          ),
-        ),
-        Text("Current Power: ${_astigmatismPower.toStringAsFixed(2)}", style: GoogleFonts.poppins(fontSize: 16)),
-        const SizedBox(height: 20),
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-          children: [
-            ElevatedButton(onPressed: () => _processAstigmatismPower(true), child: const Text("Horizontal is clearer")),
-            ElevatedButton(onPressed: () => _processAstigmatismPower(false), child: const Text("Vertical is clearer")),
-          ],
-        ),
-        const SizedBox(height: 10),
-        TextButton(onPressed: _finalizeAstigmatismPower, child: const Text("They are equal")),
-        const SizedBox(height: 40),
-      ],
-    );
-  }
-
-
-  Widget _buildRefractionUI() {
-    return Column(
-      key: const ValueKey('refraction'),
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
-        Text("Testing ${_testingLeftEye ? 'Left' : 'Right'} Eye: Refractive Power", style: GoogleFonts.poppins(fontSize: 18, color: Colors.grey.shade700)),
-        const SizedBox(height: 20),
-        Text("Which option appears clearer?", style: GoogleFonts.poppins(fontSize: 22)),
+        Text("Duochrome Test", style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Colors.teal[800]), textAlign: TextAlign.center),
+        const SizedBox(height: 30),
+        Text("Which background makes the letters appear clearer?", style: TextStyle(fontSize: 18, color: Colors.teal[700]), textAlign: TextAlign.center),
         const SizedBox(height: 30),
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceEvenly,
           children: [
-            _buildRefractionOption("Option A", _currentRefractionDiopter - _refractionStep, () => _processRefractionChoice(true)),
-            _buildRefractionOption("Option B", _currentRefractionDiopter + _refractionStep, () => _processRefractionChoice(false)),
+            Expanded(child: GestureDetector(onTap: () => _handleDuochromeResult('red'), child: Container(height: 150, color: Colors.red.shade700, alignment: Alignment.center, child: const Text("A B C", style: TextStyle(fontSize: 36, fontWeight: FontWeight.bold, color: Colors.white))))),
+            Expanded(child: GestureDetector(onTap: () => _handleDuochromeResult('green'), child: Container(height: 150, color: Colors.green.shade700, alignment: Alignment.center, child: const Text("D E F", style: TextStyle(fontSize: 36, fontWeight: FontWeight.bold, color: Colors.white))))),
           ],
         ),
-         const SizedBox(height: 20),
-        TextButton(onPressed: () => _moveToNextPhase(), child: const Text("They are equal / Both blurry")),
+        const SizedBox(height: 30),
+        _animatedButton("Both Equal", Colors.teal.shade500, () => _handleDuochromeResult('equal')),
       ],
     );
   }
 
-  Widget _buildRefractionOption(String title, double power, VoidCallback onPressed) {
-    double blurAmount = power.abs() * 0.8; 
-    return GestureDetector(
-      onTap: onPressed,
-      child: Column(
-        children: [
-          Text(title, style: GoogleFonts.poppins(fontSize: 18)),
-          const SizedBox(height: 10),
-          ImageFiltered(
-            imageFilter: ui.ImageFilter.blur(sigmaX: blurAmount, sigmaY: blurAmount),
-            child: Text(
-              "E",
-              style: GoogleFonts.roboto(fontSize: 100, fontWeight: FontWeight.bold),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildFinishedUI() {
-    return Padding(
-      key: const ValueKey('finished'),
-      padding: const EdgeInsets.all(24.0),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          const Icon(Icons.check_circle_outline, color: Colors.green, size: 80),
-          const SizedBox(height: 24),
-          Text("Test Complete!", style: GoogleFonts.poppins(fontSize: 28, fontWeight: FontWeight.bold)),
-          const SizedBox(height: 20),
-          _buildResultCard("Left Eye", _leftEyeResult),
-          const SizedBox(height: 16),
-          _buildResultCard("Right Eye", _rightEyeResult),
-          const SizedBox(height: 40),
-          Text(
-            "Disclaimer: This is a screening tool, not a medical diagnosis. Consult a professional optometrist for an accurate prescription.",
-            textAlign: TextAlign.center,
-            style: GoogleFonts.poppins(fontSize: 12, color: Colors.grey.shade600),
-          ),
-          const SizedBox(height: 20),
-          ElevatedButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text("Done"),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildResultCard(String title, Map<String, dynamic> result) {
-    return Card(
-      elevation: 2,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      child: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(title, style: GoogleFonts.poppins(fontSize: 20, fontWeight: FontWeight.bold)),
-            const Divider(height: 20),
-            Text("Visual Acuity: ${result['acuity'] ?? 'N/A'}", style: GoogleFonts.poppins(fontSize: 16)),
-            Text("Estimated Power: ${result['power']?.toStringAsFixed(2) ?? 'N/A'} D", style: GoogleFonts.poppins(fontSize: 16)),
-            Text("Astigmatism Axis: ${result['astigmatism_axis']?.toString() ?? 'N/A'}°", style: GoogleFonts.poppins(fontSize: 16)),
-            Text("Astigmatism Power: ${result['astigmatism_power']?.toStringAsFixed(2) ?? 'N/A'} D", style: GoogleFonts.poppins(fontSize: 16)),
-            Text("Condition: ${result['condition'] ?? 'N/A'}", style: GoogleFonts.poppins(fontSize: 16)),
-          ],
-        ),
-      ),
+  Widget _buildAstigmatismTestUI() {
+    return Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        Text("Astigmatism Test", style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Colors.teal[800]), textAlign: TextAlign.center),
+        const SizedBox(height: 30),
+        Text("Do any lines appear bolder than others?", style: TextStyle(fontSize: 18, color: Colors.teal[700]), textAlign: TextAlign.center),
+        const SizedBox(height: 30),
+        Container(width: 250, height: 250, decoration: BoxDecoration(border: Border.all(color: Colors.black, width: 2), shape: BoxShape.circle), child: CustomPaint(painter: _ClockDialPainter())),
+        const SizedBox(height: 30),
+        _animatedButton("All lines are equal", Colors.green, () => _handleAstigmatismResult("No significant astigmatism detected.")),
+        const SizedBox(height: 15),
+        _animatedButton("Some lines are darker", Colors.red, () => _handleAstigmatismResult("Astigmatism may be present.")),
+      ],
     );
   }
 }
 
-// Custom Painters for Astigmatism Test
+class _ClockDialPainter extends CustomPainter {
+  final Paint _linePaint = Paint()
+    ..color = Colors.black
+    ..strokeWidth = 2.0;
 
-class AstigmatismFanPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = Colors.black
-      ..strokeWidth = 2;
-    final center = Offset(size.width / 2, size.height / 2);
-    final radius = size.width / 2;
-
-    for (int i = 0; i < 6; i++) {
-      final angle = i * pi / 6;
-      final x1 = center.dx + radius * cos(angle);
-      final y1 = center.dy + radius * sin(angle);
-      final x2 = center.dx - radius * cos(angle);
-      final y2 = center.dy - radius * sin(angle);
-      canvas.drawLine(Offset(x1, y1), Offset(x2, y2), paint);
+    final double radius = size.width / 2;
+    final Offset center = Offset(size.width / 2, size.height / 2);
+    for (int i = 0; i < 12; i++) {
+      final double angle = 2 * pi * (i / 12);
+      final double startX = center.dx + radius * cos(angle);
+      final double startY = center.dy + radius * sin(angle);
+      final double endX = center.dx + (radius * 0.7) * cos(angle);
+      final double endY = center.dy + (radius * 0.7) * sin(angle);
+      canvas.drawLine(Offset(startX, startY), Offset(endX, endY), _linePaint);
     }
   }
 
   @override
   bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
-}
-
-class AstigmatismBlockPainter extends CustomPainter {
-  final int axis;
-  final double power;
-
-  AstigmatismBlockPainter({required this.axis, required this.power});
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final center = Offset(size.width / 2, size.height / 2);
-    final axisRadians = axis * pi / 180;
-
-    final paint1 = Paint()..color = Colors.black..strokeWidth = 2;
-    final paint2 = Paint()..color = Colors.black..strokeWidth = 2;
-    
-    // Simulate astigmatic blur by changing stroke width
-    paint1.strokeWidth = max(1.0, 2.5 + power);
-    paint2.strokeWidth = max(1.0, 2.5 - power);
-
-    // Block 1 (Horizontal relative to axis)
-    canvas.save();
-    canvas.translate(center.dx, center.dy);
-    canvas.rotate(axisRadians);
-    for(int i = -2; i <= 2; i++) {
-        canvas.drawLine(Offset(-30, i * 8.0), Offset(30, i * 8.0), paint1);
-    }
-    canvas.restore();
-
-    // Block 2 (Vertical relative to axis)
-    canvas.save();
-    canvas.translate(center.dx, center.dy);
-    canvas.rotate(axisRadians + pi/2);
-     for(int i = -2; i <= 2; i++) {
-        canvas.drawLine(Offset(-30, i * 8.0), Offset(30, i * 8.0), paint2);
-    }
-    canvas.restore();
-  }
-
-  @override
-  bool shouldRepaint(covariant AstigmatismBlockPainter oldDelegate) {
-    return oldDelegate.axis != axis || oldDelegate.power != power;
-  }
 }

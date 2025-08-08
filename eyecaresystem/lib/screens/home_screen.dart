@@ -2,13 +2,40 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-class HomeScreen extends StatelessWidget {
+class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
+
+  @override
+  State<HomeScreen> createState() => _HomeScreenState();
+}
+
+class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateMixin {
+  late AnimationController _animationController;
+  late Animation<double> _pulseAnimation;
+
+  @override
+  void initState() {
+    super.initState();
+    _animationController = AnimationController(
+      vsync: this,
+      duration: const Duration(seconds: 2, milliseconds: 500),
+    )..repeat(reverse: true);
+
+    _pulseAnimation = Tween<double>(begin: 1.0, end: 1.2).animate(
+      CurvedAnimation(parent: _animationController, curve: Curves.easeInOut),
+    );
+  }
+
+  @override
+  void dispose() {
+    _animationController.dispose();
+    super.dispose();
+  }
 
   Future<void> _logout(BuildContext context) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove('token');
-    if (context.mounted) {
+    if (mounted) {
       Navigator.pushReplacementNamed(context, '/login');
     }
   }
@@ -16,138 +43,141 @@ class HomeScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF8F9FA),
-      body: SafeArea(
+      backgroundColor: const Color(0xFFE7F3F2),
+      appBar: AppBar(
+        backgroundColor: const Color(0xFF014D4E),
+        elevation: 0,
+        title: Text(
+          'ClearView',
+          style: GoogleFonts.poppins(
+            fontWeight: FontWeight.bold,
+            color: Colors.white,
+          ),
+        ),
+        actions: [
+          _navButton(context, "Dashboard", () => Navigator.pushNamed(context, '/dashboard')),
+          _navButton(context, "Logout", () => _logout(context)),
+        ],
+      ),
+      body: SingleChildScrollView(
         child: Column(
           children: [
-            _buildAppBar(context),
-            Expanded(
-              child: ListView(
-                padding: const EdgeInsets.symmetric(horizontal: 20),
-                children: [
-                  const SizedBox(height: 20),
-                  _buildHeroSection(context),
-                  const SizedBox(height: 30),
-                  _buildSectionTitle("Features"),
-                  const SizedBox(height: 16),
-                  _buildFeatureCard(
-                    context,
-                    icon: Icons.visibility,
-                    title: "Comprehensive Eye Test",
-                    subtitle: "Test your vision from the comfort of your home.",
-                    color: Colors.teal,
-                    onTap: () => Navigator.pushNamed(context, '/eye_test'),
-                  ),
-                  const SizedBox(height: 12),
-                  _buildFeatureCard(
-                    context,
-                    icon: Icons.history,
-                    title: "View Your Results",
-                    subtitle: "Track your vision history over time.",
-                    color: Colors.blue,
-                    onTap: () => Navigator.pushNamed(context, '/dashboard'),
-                  ),
-                  const SizedBox(height: 30),
-                ],
-              ),
-            ),
+            _heroSection(context),
+            _featuresSection(context),
           ],
         ),
       ),
     );
   }
 
-  Widget _buildAppBar(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 16, 20, 10),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Text(
-            'ClearView',
-            style: GoogleFonts.poppins(
-              fontSize: 28,
-              fontWeight: FontWeight.bold,
-              color: const Color(0xFF1A202C),
-            ),
-          ),
-          IconButton(
-            onPressed: () => _logout(context),
-            icon: const Icon(Icons.logout_rounded, color: Colors.grey, size: 28),
-            tooltip: 'Logout',
-          )
-        ],
+  Widget _navButton(BuildContext context, String title, VoidCallback onPressed) {
+    return TextButton(
+      onPressed: onPressed,
+      child: Text(
+        title,
+        style: GoogleFonts.poppins(color: Colors.white, fontSize: 16),
       ),
     );
   }
 
-  Widget _buildHeroSection(BuildContext context) {
+  Widget _heroSection(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.all(24),
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [Colors.teal.shade400, Colors.teal.shade600],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-        borderRadius: BorderRadius.circular(24),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.teal.withOpacity(0.3),
-            blurRadius: 20,
-            offset: const Offset(0, 10),
-          )
-        ],
-      ),
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 64),
+      color: const Color(0xFF014D4E),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          Text(
-            "Welcome Back!",
-            style: GoogleFonts.poppins(
-              fontSize: 22,
-              fontWeight: FontWeight.w500,
-              color: Colors.white.withOpacity(0.9),
+          ScaleTransition(
+            scale: _pulseAnimation,
+            child: Container(
+              padding: const EdgeInsets.all(32),
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: const Color(0xFF64FFDA).withOpacity(0.1),
+              ),
+              child: const Icon(Icons.remove_red_eye, size: 96, color: Colors.white),
             ),
           ),
-          const SizedBox(height: 4),
+          const SizedBox(height: 24),
           Text(
-            "Ready for your next vision check?",
+            "ClearView",
+            textAlign: TextAlign.center,
             style: GoogleFonts.poppins(
-              fontSize: 26,
-              fontWeight: FontWeight.bold,
+              fontSize: 56,
               color: Colors.white,
+              fontWeight: FontWeight.w800,
             ),
           ),
-          const SizedBox(height: 20),
+          const SizedBox(height: 8),
+          Text(
+            "Your Virtual Eye Care Assistant",
+            textAlign: TextAlign.center,
+            style: GoogleFonts.poppins(fontSize: 22, color: Colors.white70),
+          ),
+          const SizedBox(height: 32),
           ElevatedButton(
-            onPressed: () => Navigator.pushNamed(context, '/eye_test'),
+            onPressed: () {
+              Navigator.pushNamed(context, '/eye_test');
+            },
             style: ElevatedButton.styleFrom(
               backgroundColor: Colors.white,
-              foregroundColor: Colors.teal.shade700,
-              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+              foregroundColor: const Color(0xFF014D4E),
+              padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 16),
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-              textStyle: GoogleFonts.poppins(fontSize: 16, fontWeight: FontWeight.w600),
+              textStyle: GoogleFonts.poppins(fontSize: 18, fontWeight: FontWeight.bold),
             ),
-            child: const Text("Start New Test"),
+            child: const Text("Start Your Test"),
           )
         ],
       ),
     );
   }
 
-  Widget _buildSectionTitle(String title) {
-    return Text(
-      title,
-      style: GoogleFonts.poppins(
-        fontSize: 20,
-        fontWeight: FontWeight.bold,
-        color: const Color(0xFF4A5568),
+  Widget _featuresSection(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(24),
+      child: Column(
+        children: [
+          Text(
+            "Our Features",
+            textAlign: TextAlign.center,
+            style: GoogleFonts.poppins(fontSize: 28, fontWeight: FontWeight.bold, color: Colors.grey.shade800),
+          ),
+          const SizedBox(height: 24),
+          _featureCard(
+            context,
+            icon: Icons.checklist_rtl,
+            title: "Comprehensive Screening",
+            subtitle: "Your original, detailed multi-step eye exam.",
+            iconColor: Colors.teal,
+            onTap: () => Navigator.pushNamed(context, '/eye_test'),
+          ),
+          const SizedBox(height: 16),
+          _featureCard(
+            context,
+            icon: Icons.history,
+            title: "Track Your History",
+            subtitle: "View and monitor your results over time.",
+            iconColor: Colors.blue,
+            onTap: () => Navigator.pushNamed(context, '/dashboard'),
+          ),
+          const SizedBox(height: 16),
+          // --- NEW FEATURE CARD ADDED HERE ---
+          _featureCard(
+            context,
+            icon: Icons.camera,
+            title: "Keratometry Simulation",
+            subtitle: "Estimate corneal curvature with your camera.",
+            iconColor: Colors.purple,
+            onTap: () => Navigator.pushNamed(context, '/keratometry'),
+          ),
+        ],
       ),
     );
   }
 
-  Widget _buildFeatureCard(BuildContext context, {required IconData icon, required String title, required String subtitle, required Color color, required VoidCallback onTap}) {
+  Widget _featureCard(BuildContext context, {required IconData icon, required String title, required String subtitle, required Color iconColor, required VoidCallback onTap}) {
     return GestureDetector(
       onTap: onTap,
       child: Container(
@@ -166,12 +196,12 @@ class HomeScreen extends StatelessWidget {
         child: Row(
           children: [
             Container(
-              padding: const EdgeInsets.all(12),
+              padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
-                color: color.withOpacity(0.1),
+                color: iconColor.withOpacity(0.1),
                 borderRadius: BorderRadius.circular(16),
               ),
-              child: Icon(icon, color: color, size: 28),
+              child: Icon(icon, color: iconColor, size: 32),
             ),
             const SizedBox(width: 16),
             Expanded(
@@ -181,7 +211,7 @@ class HomeScreen extends StatelessWidget {
                   Text(
                     title,
                     style: GoogleFonts.poppins(
-                      fontSize: 17,
+                      fontSize: 18,
                       fontWeight: FontWeight.bold,
                       color: const Color(0xFF1A202C),
                     ),
@@ -196,7 +226,6 @@ class HomeScreen extends StatelessWidget {
                 ],
               ),
             ),
-            const Icon(Icons.arrow_forward_ios_rounded, color: Colors.grey, size: 18),
           ],
         ),
       ),
